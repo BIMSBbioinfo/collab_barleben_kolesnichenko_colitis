@@ -1,0 +1,344 @@
+---
+title: "Differential Expression Analysis - Impact of DSS and NFKB perturbation - Acute colitis"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    theme: united
+params:
+  datadir: ''
+  srcdir: ''
+  outdir: ''
+author: Bora Uyar
+---
+
+`r date()`
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, fig.width = 10,
+                      fig.height = 8)
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(pbapply)
+library(RUVSeq)
+library(EDASeq)
+library(DESeq2)
+library(progeny)
+library(ggrepel)
+library(pheatmap)
+library(openxlsx)
+library(singscore)
+library(effectsize)
+ggplot2::theme_set(ggpubr::theme_pubclean())
+
+datadir = params$datadir
+srcdir = params$srcdir
+outdir = params$outdir
+
+source(file.path(srcdir, 'utils.R'))
+sample_sheet <- read.csv(file.path(datadir, 'rnaseq/sample_sheet.csv'))
+counts <- read.table(file.path(datadir, 'rnaseq/feature_counts/raw_counts/hisat2/counts.tsv'), header = T, check.names = F)
+deseq_norm_counts <- read.table(file.path(datadir, 'rnaseq/feature_counts/normalized/hisat2/deseq_normalized_counts.tsv'), check.names = F)
+colData <- data.frame(sample_sheet[,-1], row.names = sample_sheet$name)
+colData$DSS <- do.call(c, lapply(strsplit(colData$sample_type, "_"), function(x) x[1]))
+colData$NFKB <- do.call(c, lapply(strsplit(colData$sample_type, "_"), function(x) x[length(x)]))
+
+# get id mappings
+ids <- readRDS(file.path(datadir, 'ensmusg2name.RDS'))
+```
+
+# Before correction {.tabset}
+
+Using DESeq2 normalized counts (before accounting for additional sources of variation)
+
+It looks like primary impact is from DSS treatment, secondary impact is NFKB status (but weak)
+
+## nfkb status (repressed or wt)
+
+```{r}
+P <- get_pca(log(deseq_norm_counts+1), colData)
+ggplot(P$dat, aes(x = PC1, y = PC2)) + geom_point(aes(color = NFKB), size = 5) +
+  geom_text_repel(aes(label = sample_type)) + 
+  labs(x = P$var_exp[['PC1']], y = P$var_exp[['PC2']])
+```
+
+## DSS treatment (short / long / untreated)
+
+```{r}
+ggplot(P$dat, aes(x = PC1, y = PC2)) + geom_point(aes(color = DSS), size = 5) +
+  geom_text_repel(aes(label = sample_type)) + 
+  labs(x = P$var_exp[['PC1']], y = P$var_exp[['PC2']])
+```
+
+## NFKB status and DSS treatment
+
+```{r}
+ggplot(P$dat, aes(x = PC1, y = PC2)) + geom_point(aes(color = DSS, shape = NFKB), size = 5) +
+  geom_text_repel(aes(label = sample_type)) + 
+  labs(x = P$var_exp[['PC1']], y = P$var_exp[['PC2']])
+```
+
+
+# Detect unwanted variation and correct for those
+
+```{r}
+# use RUVs 
+k <- 5
+set <- newSeqExpressionSet(counts = as.matrix(counts),
+                           phenoData = colData)
+differences <- makeGroups(colData$sample_type)
+set_s <- RUVs(set, unique(rownames(set)), 
+              k=k, differences) #all genes
+
+norm_counts <- log(normCounts(set_s)+1)
+
+
+```
+
+## Plot normalized counts {.tabset}
+
+### by DSS
+
+```{r}
+P <- get_pca(norm_counts, colData)
+ggplot(P$dat, aes(x = PC1, y = PC2)) + geom_point(aes(color = DSS), size = 5) +
+  geom_text_repel(aes(label = sample_type)) + 
+  labs(x = P$var_exp[['PC1']], y = P$var_exp[['PC2']])
+```
+
+### by NFKB
+
+```{r}
+ggplot(P$dat, aes(x = PC1, y = PC2)) + geom_point(aes(color = NFKB), size = 5) +
+  geom_text_repel(aes(label = sample_type)) + 
+  labs(x = P$var_exp[['PC1']], y = P$var_exp[['PC2']])
+
+```
+
+### by DSS & NFKB
+```{r}
+ggplot(P$dat, aes(x = PC1, y = PC2)) + geom_point(aes(color = DSS, shape = NFKB), size = 5) +
+  geom_text_repel(aes(label = sample_type)) + 
+  labs(x = P$var_exp[['PC1']], y = P$var_exp[['PC2']])
+```
+
+Now, I want to integrate the learned confounding variables to update DESeq2 analysis. 
+
+```{r}
+pdat <- pData(set_s)
+pdat <- pdat[,c('sample_type', 'NFKB', 'DSS', grep('W_', colnames(pdat), value = T))]
+pdat$group <- as.factor(pdat$sample_type)
+colnames(pdat) <- gsub("_", "", colnames(pdat))
+myFormula <- as.formula(paste0(" ~ group + ", paste(grep('^W', colnames(pdat), value = T)[1:k], collapse = " + ")))
+dds <- DESeqDataSetFromMatrix(countData = counts, 
+                              colData = pdat, 
+                              design = myFormula)
+# remove uninformative features
+dds <- dds[ rowSums(DESeq2::counts(dds)) > 10, ]
+dds <- DESeq(dds)
+```
+
+Some more diagnostic plots from DESeq2 after incorporating additional factors for unwanted variation. 
+
+```{r}
+# diagnostics 
+plotMA(dds)
+plotDispEsts(dds)
+```
+
+For each pair of terms, do a DE analysis 
+
+```{r}
+#CNT: character vector of 3 elements: 1. variable of interest, 2. case factor 3. control factor
+get_de <- function(dds, CNT, ids) {
+  res <- results(dds, contrast = CNT)
+  res <- res[order(res$padj),]
+  res$geneName <- ids[match(rownames(res), id)]$name
+  res <- list('dt' = data.table(data.frame(res), keep.rownames = T))
+  names(res) <- paste0(CNT[2], "_vs_", CNT[3])
+  return(res)
+}
+
+# do a DE analysis based on learned W factors 
+comparisons <- data.table(expand.grid('group', unique(pdat$group), unique(pdat$group)))
+comparisons <- comparisons[Var2 != Var3]
+comparisons$index <- apply(comparisons, 1, function(x) paste0(sort(x[2:3]), collapse = ' '))
+comparisons <- comparisons[,.SD[which.min(Var2)],by = index][order(Var3, decreasing = T)][,2:4]
+
+results <- do.call(c, pbapply::pbapply(comparisons, 1, function(x) {
+  get_de(dds, x, ids)
+}))
+
+# shorten the comparison names to fit 22 characters per sheet name
+shorten <- function(x) {
+  name <- gsub("_dss|eated|", "", x)
+  name <- gsub("_wt", "WT", name)
+  name <- gsub("_loxp", "LOXP", name)
+  name <- gsub("_vs_", "_", name)
+  return(name)
+}
+
+
+
+# save DE tables to excel file
+OUT1 <- createWorkbook() # for complete tables
+OUT2 <- createWorkbook() # for only significant results
+dummy <- lapply(names(results), function(comp) {
+  # shorten the sheet names
+  sname <- shorten(comp)
+  addWorksheet(OUT1, sname)
+  writeData(OUT1, sheet = sname, x = results[[comp]])
+  addWorksheet(OUT2, sname)
+  writeData(OUT2, sheet = sname, x = results[[comp]][padj < 0.01])
+})
+saveWorkbook(OUT1, file.path(outdir, "DE_results.xlsx"), overwrite = T)
+saveWorkbook(OUT2, file.path(outdir, "DE_results.significant_genes.xlsx"), overwrite = T)
+
+
+```
+
+Plot number of DE genes in each comparison
+```{r}
+# count # of DE genes per comparison
+DEstats <- do.call(rbind, lapply(names(results), function(x) {
+  case <- unlist(strsplit(x, "_vs_"))[1]
+  ctrl <- unlist(strsplit(x, "_vs_"))[2]
+  data.table('case' = case, 'ctrl' = ctrl, 'DEgenes' = nrow(results[[x]][padj < 0.01]))
+}))
+
+ggplot(DEstats, aes(x = ctrl, y = case)) + 
+  geom_tile(aes(fill = DEgenes)) + 
+  geom_text(aes(label = DEgenes), color = 'white', size = 8)
+
+```
+
+# Genes of interest 
+
+We have a list of genes with expected changes (from qPCR) and a set of house-keeping genes. 
+Make a plot of the DE stats of these genes:
+```{r}
+goi <- list('house_keeping' = c('Hprt', 'Tbp'),
+            'expected_to_change' = c('Tnfaip3', 'Nfkbia', 'Tnf'))
+
+dt <- do.call(rbind, lapply(names(results), function(x) {
+  dt <- results[[x]][geneName %in% paste(unlist(goi))]
+  dt$comp <- x
+  dt$type <- ifelse(dt$geneName %in% goi$house_keeping, "houseKeeping", "others")
+  return(dt)
+}))
+
+ggplot(dt, aes(x = comp, y = -log10(padj))) + 
+  geom_bar(aes(fill = type), stat = 'identity') + 
+  geom_hline(yintercept = -log10(0.01)) + 
+  facet_wrap( ~ geneName, ncol = 5) + coord_flip()
+
+```
+
+# Plot expression distributions of  selected genes {.tabset}
+
+```{r}
+get_exp <- function(g) {
+  gid <- ids[match(g, name)]$id
+  exp <- data.table('normalized_exp' = norm_counts[gid,], 'group' = colData[colnames(norm_counts),]$sample_type)
+  return(exp)
+}
+dt <- do.call(rbind, lapply(c('Tnf', 'Tnfaip3', 'Hprt', 'Tbp', 'Nfkbia'), function(g) {
+  dt <- get_exp(g)
+  dt$gene <- g
+  return(dt)
+}))
+
+ggboxplot(dt, x = 'group', y = 'normalized_exp', add = 'jitter', color = 'group', facet.by = 'gene', scales = 'free') +
+  coord_flip()
+```
+
+
+# Gene-set scores
+
+We can also compute cell type signature scores in each sample and see their clustering
+
+```{r}
+# gene set scoring - use cell type signatures from msigdb for mouse
+gs <- read_msigdb(file.path(datadir, 'genesets/m8.all.v2022.1.Mm.symbols.gmt'))
+# convert gene sets from gene names to ens ids
+gs_ids <- sapply(gs, function(x) {
+  na.omit(unique(ids[match(x, name)]$id))
+})
+# rank genes (based on ruvs normalized counts)
+norm_counts <- log(normCounts(set_s)+1)
+rankData <- singscore::rankGenes(expreMatrix = norm_counts)
+# score gene sets 
+scores <- pbapply::pbsapply(gs_ids, function(x) {
+  score_gene_set(rankData, genes_up = x)
+})
+rownames(scores) <- colnames(rankData)
+
+# visualize scores
+pheatmap(scores, annotation_row = pdat[rownames(scores), 'group',drop=F], 
+         show_colnames = F, scale = 'column')
+# also print to file
+pheatmap(t(scores), annotation_col = pdat[rownames(scores), 'group',drop=F], scale = 'row', 
+         fontsize_row = 5, fontsize_col = 6, 
+         width = 12, height = 14, border_color = NA, cutree_cols = 6, cutree_rows = 6,
+         filename = file.path(outdir, 'msigdb_celltype_signatures.scores.pdf'))
+
+```
+
+See which gene sets show distinction across groups
+
+```{r}
+res <- compute_anova(scores, pdat[rownames(scores),'group'])
+dt <- data.table(scores[,res[order(padj)][1:6]$variable], 
+                 'group' = pdat[rownames(scores), 'group'])
+mdt <- melt.data.table(dt, id.vars = 'group')
+mdt$variable <- gsub("TABULA_MURIS_SENIS", "TMS", mdt$variable)
+
+ggboxplot(mdt, x = 'group', y = 'value', add = 'jitter', color = 'group') + 
+  facet_wrap(~ variable, scales = 'free') + 
+  coord_flip()
+```
+
+# Progeny - Perturbed Pathway Scores
+
+For each DE analysis, we can compute which pathways are most likely to be perturbed compared to the control. 
+
+```{r}
+# run progeny 
+# res: deseq result table
+get_progeny_scores <- function(res) {
+  # pick best result per gene name  
+  # some ids are mapped to gene names ambigously 
+  res <- res[,.SD[which.min(padj)],by = geneName][,c('geneName', 'stat')]
+  m <- as.matrix(data.frame(res[,-1], row.names = res$geneName))
+  progeny_scores <- data.frame(t(progeny(m,
+                            scale=TRUE, organism="Mouse", 
+                            top = 100, perm = 10000, z_scores = FALSE)))
+  return(progeny_scores)
+}
+
+# from each DE result, compute progeny scores
+progeny_scores <- pbapply::pbsapply(simplify = F, results, function(dt) {
+ get_progeny_scores(dt) 
+})
+
+PS <- do.call(cbind, lapply(names(progeny_scores), function(x) {
+  dt <- progeny_scores[[x]]
+  colnames(dt)[1] <- x
+  return(dt)
+}))
+
+pheatmap(t(PS))
+
+```
+
+
+```{r}
+sessionInfo()
+```
+
+
+

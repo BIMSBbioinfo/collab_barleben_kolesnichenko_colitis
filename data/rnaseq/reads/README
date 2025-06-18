@@ -1,0 +1,4 @@
+The raw reads can be downloaded as follows:
+
+> wget https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/rnaseq_reads.tgz
+> tar -xzvf rnaseq_reads.tgz 

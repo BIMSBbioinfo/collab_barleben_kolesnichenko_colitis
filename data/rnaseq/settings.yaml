@@ -1,0 +1,36 @@
+locations:
+  reads-dir: /data/local/buyar/collaborations/marina_acute_colitis/data/reads
+  output-dir: /data/local/buyar/collaborations/marina_acute_colitis/output
+  genome-fasta: /data/local/buyar/datasets/genomes/Mus_musculus.GRCm38.dna.toplevel.fa
+  cdna-fasta: /data/local/buyar/collaborations/marina_acute_colitis/data/annotation/Mus_musculus.GRCm38.cdna.with_EGFP_knockin.fa  # notice the custom fasta file that contains a knockin sequence
+  gtf-file: /data/local/buyar/datasets/annotation/mm10/Mus_musculus.GRCm38.91.chr.gtf
+
+# The "organism" field is needed for GO term analysis. Leave it empty
+# if not interested in GO analysis.  Otherwise provide a string with
+# the initial of genus and the species name (e.g. hsapiens, mmusculus,
+# dmelanogaster, celegans)
+organism: 'mmusculus'
+
+mapping:
+  mapper: 'hisat2' # options are star or hisat2
+  genome_build: 'GRCm38'  #genome build version identifier that is used in hisat2 index file names
+
+coverage:
+  tool: 'megadepth' # options are megadepth or bamCoverage
+
+# Configuration for how to do read counting using
+# GenomicAlignments::summarizeOverlaps feature type and grouping
+# features must match what is available in the GTF file most GTF files
+# will use "exon" or "CDS" as features and "gene_id", and
+# "transcript_id" for combining features.
+counting:
+  counting_mode: "Union" # other options are "IntersectionStrict" and "IntersectionNotEmpty"
+  drop_nonunique: TRUE # boolean, When set to TRUE, multi-mapping reads are not counted (see inter.feature argument of summarizeOverlaps)
+  strandedness: "reverse" # other options are "forward" and "reverse" for strand-specific read-counting
+  feature: "exon"
+  group_feature_by: "gene_id"
+  yield_size: 2000000 # how many reads to process at a time (this impacts memory consumption)
+
+execution:
+  jobs: 12
+
