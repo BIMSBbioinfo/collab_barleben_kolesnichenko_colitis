@@ -18,7 +18,7 @@ Bulk RNAseq of mouse colon crypts under six different conditions was carried out
 The sample conditions consisted of a combination of two distinct NF-κB states (suppressed or WT) and three different DSS treatments (untreated, colitis, recovery). 
 Each condition consisted of 4 replicates, thus a total of 24 samples were obtained. The raw sequences were processed and analysed using the [PiGx RNA-seq pipeline](https://github.com/BIMSBbioinfo/pigx_rnaseq).
 
-  - **Raw Data**: Raw fastq reads along with the DNA, cDNA, ang GTF files used in the analysis can be downloaded from [here](insert link)
+  - **Raw Data**: Raw fastq reads along with the DNA, cDNA, ang GTF files used in the analysis can be downloaded from [here](https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/rnaseq_reads.tgz)
   - **Sample Sheet**: Contains the experimental setup. See ./data/rnaseq/sample_sheet.csv
   - **PiGx RNA-Seq Settings File**: The settings file required to run pigx-rnaseq pipeline. See ./data/rnaseq/settings.yaml 
   - **Processed count tables**: Raw/normalized feature count tables can be found under ./data/rnaseq/feature_counts
@@ -67,7 +67,8 @@ outdir=$(pwd)
 ```
 
 - HTML report:  `./results/rnaseq/analysis.html`. 
-- The DEseq2 results: `./results/rnaseq/DE_results.xlsx' 
+- The DEseq2 results: `./results/rnaseq/DE_results.xlsx`. 
+
 
 
 
