@@ -67,7 +67,7 @@ srcdir=$(pwd)/src
 datadir=$(pwd)/data 
 outdir=$(pwd)
 
-/opt/R/4.5/bin/Rscript -e "library(rmarkdown); rmarkdown::render('./src/analysis.Rmd', \
+Rscript -e "library(rmarkdown); rmarkdown::render('./src/analysis.Rmd', \
   params = list(datadir = '${datadir}', srcdir = '${srcdir}', outdir = '${outdir}'), \
   output_file = 'analysis.html', \
   output_dir = '${outdir}')"
@@ -148,7 +148,7 @@ seurat_file=`readlink -f seu.RDS`
 datadir=`readlink -f ../data`
 outdir=$(pwd)
 
-/opt/R/4.5/bin/Rscript -e "library(rmarkdown); rmarkdown::render('../src/manuscript_figures_egfp_analysis.Rmd', \
+Rscript -e "library(rmarkdown); rmarkdown::render('../src/manuscript_figures_egfp_analysis.Rmd', \
   params = list(datadir = '${datadir}', srcdir = '${srcdir}', seurat_file = '${seurat_file}'), \
   output_file = 'manuscript_figures_egfp_analysis.html', \
   output_dir = '${outdir}')"
@@ -162,7 +162,7 @@ cd single_cell_analysis
 cellchat_file=`readlink -f cellChat_by_condition.RDS`
 outdir=$(pwd)
 
-/opt/R/4.5/bin/Rscript -e "library(rmarkdown); rmarkdown::render('../src/manuscript_figures.cellChat.Rmd', \
+Rscript -e "library(rmarkdown); rmarkdown::render('../src/manuscript_figures.cellChat.Rmd', \
   params = list(cellchat_file = '${cellchat_file}'), \
   output_file = 'manuscript_figures.cellChat.html', \
   output_dir = '${outdir}')"
