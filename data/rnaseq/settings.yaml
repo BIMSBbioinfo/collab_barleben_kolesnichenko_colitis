@@ -1,9 +1,9 @@
 locations:
-  reads-dir: /data/local/buyar/collaborations/marina_acute_colitis/data/reads
-  output-dir: /data/local/buyar/collaborations/marina_acute_colitis/output
-  genome-fasta: /data/local/buyar/datasets/genomes/Mus_musculus.GRCm38.dna.toplevel.fa
-  cdna-fasta: /data/local/buyar/collaborations/marina_acute_colitis/data/annotation/Mus_musculus.GRCm38.cdna.with_EGFP_knockin.fa  # notice the custom fasta file that contains a knockin sequence
-  gtf-file: /data/local/buyar/datasets/annotation/mm10/Mus_musculus.GRCm38.91.chr.gtf
+  reads-dir: <path to rna-seq reads> 
+  output-dir: output
+  genome-fasta: <path to Mus_musculus.GRCm38.dna.toplevel.fa > # see annotations.tgz archive
+  cdna-fasta: <path to Mus_musculus.GRCm38.cdna.with_EGFP_knockin.fa > # see annotations.tgz archive
+  gtf-file: < path to GTF file Mus_musculus.GRCm38.91.chr.gtf > # see annotations.tgz archive
 
 # The "organism" field is needed for GO term analysis. Leave it empty
 # if not interested in GO analysis.  Otherwise provide a string with
