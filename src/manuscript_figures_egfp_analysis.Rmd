@@ -1,0 +1,501 @@
+---
+title: "Manuscript Figures - Cell types, EGFP+/- cell comparisons"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    theme: readable
+params:
+  srcdir: ''
+  seurat_file: ''
+  datadir: ''
+author: Bora Uyar
+---
+
+`r date()`
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F, fig.height = 8, fig.width = 10)
+library(openxlsx)
+library(data.table)
+library(pheatmap)
+library(ggpubr)
+library(gprofiler2)
+library(stringr)
+library(ggrepel)
+library(ggridges)
+library(RUVSeq)
+library(Seurat)
+data.table::setDTthreads(12)
+ggplot2::theme_set(ggpubr::theme_pubclean())
+
+srcdir <- params$srcdir 
+seurat_file <- params$seurat_file
+datadir <- params$datadir
+
+source(file.path(srcdir, 'utils.R'))
+```
+
+Import the Seurat object:
+previously processed, annotated with cell labels, assigned gene-set scores using AUCell (cancersea state signature scores), and cells that contain EGFP plasmid fragments have been labeled. 
+
+```{r}
+seu <- readRDS(seurat_file)
+# simplify cell type labels (group rare ones into "other")
+seu$celltype <- ifelse(seu$celltype %in% names(which(table(seu$celltype) < 100)), 
+                        'other', seu$celltype)
+# update group labels 
+conditions <- list('PoolA' = 'Recovery', 
+               'PoolB' = 'DSS', 
+               'PoolC' = 'Untreated')
+seu$condition <- paste(conditions[seu$sample])
+egfp_cells <- colnames(seu)[seu$egfp_status == 'EGFP_POS']
+```
+
+# EGFP cells
+
+From the single-cell sequencing of samples under 3 conditions, we managed to pick up about 1.5% of cells to contain at least one unique read originating from the EGFP-plasmid. Those cells are supposed to contain NFKB promoters thus, EGFP-positive cells are likely to contain increased NFKB activity. 
+
+```{r}
+knitr::kable(table(seu$egfp_status, seu$condition), 
+caption = 'Number of cells per condition categorized by EGFP status')
+```
+
+# UMAPs {.tabset}
+
+**Note**: Black dots represent cells for which we could pick up at least one EGFP-plasmid fragment. 
+
+## celltype 
+```{r}
+p <- DimPlot(seu, group.by = 'celltype')
+df <- p[[1]]$data
+p +  geom_point(data = df[egfp_cells,], aes(x = umap_1, y = umap_2), 
+             color = 'black', size = 1)
+```
+
+## condition 
+```{r}
+p <- DimPlot(seu, group.by = 'condition')
+df <- p[[1]]$data
+p +  geom_point(data = df[egfp_cells,], aes(x = umap_1, y = umap_2), 
+             color = 'black', size = 1)
+```
+
+## celltype + condition
+```{r}
+p <- DimPlot(seu, group.by = 'celltype', split.by = 'condition')
+df <- p[[1]]$data
+p +  geom_point(data = df[egfp_cells,], aes(x = umap_1, y = umap_2), 
+                color = 'black', size = 1)
+```
+
+# CancerSEA signatures {.tabset}
+
+Comparison of cancer state signature scores in egfp+ and egfp- cells in different conditions 
+
+## By EGFP status
+```{r}
+sigs <- colnames(seu@meta.data)[10:23]
+dt <- data.table(seu@meta.data)
+
+mdt <- melt.data.table(dt, measure.vars = sigs)
+
+ggplot(mdt, aes(x = value, y = variable)) + 
+  geom_density_ridges(aes(fill = egfp_status), alpha = 0.5) +
+  scale_fill_manual(values = c('blue', 'red')) + 
+  labs(y = 'Signature', x = 'AUCell score')
+
+```
+
+
+## By condition
+```{r}
+ggplot(mdt, aes(x = value, y = variable)) + 
+  geom_density_ridges(aes(fill = condition), alpha = 0.5) +
+  labs(y = 'Signature', x = 'AUCell score') 
+```
+
+## By condition + egfp status
+```{r}
+ggplot(mdt, aes(x = value, y = variable)) + 
+  geom_density_ridges(aes(fill = egfp_status), alpha = 0.5) +
+  scale_fill_manual(values = c('blue', 'red')) + 
+  labs(y = 'Signature', x = 'AUCell score') +
+  facet_grid(~ condition)
+
+```
+
+# Marker Analysis - Epithelial Cells
+
+Now, we focus on epithelial cells (cells annotated as epithelial and also are cdh1+) to look for NKFB activity signatures by comparing EGFP+ cells iwth EGFP- cells in different conditions.
+
+## Markers to cross-check with qPCR data 
+
+For each gene, we check ratio of epithelial cells expressing the marker in different
+conditions; split by egfp status 
+
+```{r, fig.height=10}
+qPCR_markers <- c('Egfp', 'Lgr5', 'Chga', 'Muc2', 'Dclk1', 'Tnfaip3', 'Noxa1', 
+                  'Tnf', 'Bcl2l1', 'Bcl2')
+M <- GetAssayData(seu)
+epithelial_cells <- intersect(colnames(seu)[seu$celltype == 'Epithelial cells'], 
+                                      names(which(M['Cdh1',] > 0)))
+
+#  setdiff(intersect(colnames(seu)[seu$celltype == 'Epithelial cells'], 
+ #                                     names(which(M['Cdh1',] > 0))),
+  #                          names(which(M['Ptprc',] > 0)))
+  
+seu_epi <- seu[,epithelial_cells]
+
+dt <- data.table(seu_epi@meta.data, keep.rownames = T)
+dt <- cbind(dt, sapply(qPCR_markers, function(x) {
+  M[x, dt$rn]
+}))
+
+df <- do.call(rbind, lapply(qPCR_markers, function(x) {
+  s <- dt[,list('percent_expressed' = round(sum(get(x) > 0)/length(get(x)) * 100, 1), 
+          'avg_expression' = mean(get(x))),by = c('condition', 'egfp_status')]
+  s$gene <- x
+  return(s)
+}))
+
+df$egfp_status <- factor(df$egfp_status, levels = c('EGFP_POS', 'EGFP_NEG'))
+df$condition <- factor(df$condition, levels = c('Untreated', 'DSS', 'Recovery'))
+ggplot(df, aes(x = egfp_status, y = percent_expressed)) + 
+  geom_bar(stat = 'identity', aes(fill = condition), position = 'dodge') + 
+  facet_wrap(~ gene, scales = 'free', nrow = 2) + 
+  scale_fill_brewer(type = 'qual', palette = 6)
+
+```
+
+## Dot Plots of Markers {.tabset}
+
+### Top markers
+
+```{r, fig.height=2.8, fig.width=11}
+# find markers for egfp+/egpf- in cdh1+ epithelial cells 
+markers <- sapply(simplify = F, unique(seu_epi$condition), function(x) {
+  message(date(), " => computing markers for condition ",x)
+  dt <- data.table(FindMarkers(seu_epi[,seu_epi$condition == x], 
+                               min.pct = 0.1, 
+                               logFoldChange = 0.25,
+                         test.use = 'wilcox', 
+                         ident.1 = 'EGFP_POS',
+                         ident.2 = 'EGFP_NEG',
+                         only.pos = TRUE, 
+                         group.by = 'egfp_status'), 
+             keep.rownames = T)
+  dt$condition <- x
+  return(dt)
+})
+markers <- do.call(rbind, markers) 
+
+m <- markers[pct.1 > 0.15][p_val_adj < 0.1][order(p_val_adj), .SD[1:21], by = .(condition)][!is.na(rn)][rn != 'Egfp']
+
+p <- DotPlot(seu_epi[,seu_epi$egfp_status == 'EGFP_POS'], 
+             features = unique(m$rn), 
+      group.by = 'condition', scale = F) + coord_flip()
+
+df <- p$data
+
+df$id <- factor(df$id, levels = c('Untreated', 'DSS', 'Recovery'))
+
+ggplot(df, aes(x = features.plot, y = id)) + 
+  geom_point(aes(color = avg.exp.scaled, size = pct.exp)) +
+  labs(color = "Average\nExpression", size = "Percent\nExpression") + 
+#  scale_color_gradient(low = '#672976', high = 'yellow') +  
+  scale_color_gradientn(colors = colorRampPalette(c("#313e93", "#b252a2", "#f4a16f", "#eeea59"))(50)) + 
+  scale_size(range = c(0, 6)) + 
+  theme(axis.title = element_blank(), 
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, face = 'italic'), 
+        axis.text = element_text(size = 14, family = 'Arial'),
+        legend.title = element_text(family = 'Arial'))
+
+```
+
+### Subset of top markers 
+
+```{r, fig.height=2.5, fig.width=7}
+# subset of genes of interest
+# I don't know how these are selected by Marina
+goi <- c('Steap4', 'Smim19', 'Cox17', 'Nfkbib', 'Man2a2', 'Sept10', 'Acot13', 'Ndufv2', 'Mrps15', 'Aqp8', 'H2-Eb1', 'Ly6g', 'Atf3')
+
+p <- DotPlot(seu_epi[,seu_epi$egfp_status == 'EGFP_POS'], 
+             features = goi, 
+      group.by = 'condition', scale = F) + coord_flip()
+
+df <- p$data
+
+df$id <- factor(df$id, levels = c('Untreated', 'DSS', 'Recovery'))
+
+ggplot(df, aes(x = features.plot, y = id)) + 
+  geom_point(aes(color = avg.exp.scaled, size = pct.exp)) +
+  labs(color = "Average\nExpression", size = "Percent\nExpression") + 
+  scale_color_gradientn(colors = colorRampPalette(c("#313e93", "#b252a2", "#f4a16f", "#eeea59"))(50)) +  
+  scale_size(range = c(0, 6)) + 
+  theme(axis.title = element_blank(), 
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, face = 'italic'), 
+        axis.text = element_text(size = 14, family = 'Arial'),
+        legend.title = element_text(family = 'Arial'))
+
+```
+
+## Heatmaps {.tabset}
+ 
+Found top markers expressed in at least 15% of EGFP+ cells and filtered for padj < 0.1 
+
+### Average Marker Expression
+
+```{r, fig.height=10}
+colorPal <- colorRampPalette(c("darkorchid4", "yellow"))(50)
+M <- GetAssayData(seu_epi)
+
+#top <- markers[pct.1 > 0.15][p_val_adj < 0.1]
+
+top <- markers[pct.1 > 0.15][p_val_adj < 0.1][order(p_val_adj), .SD[1:20], by = .(condition)][!is.na(rn)]
+
+B <- get_basis_matrix(t(as.matrix(M[unique(top$rn),])), 
+                      as.factor(paste(seu_epi$condition, seu_epi$egfp_status)))
+
+sample_order <- c('Untreated EGFP_POS', 'Untreated EGFP_NEG', 
+                  'DSS EGFP_POS', 'DSS EGFP_NEG', 
+                  'Recovery EGFP_POS', 'Recovery EGFP_NEG')
+
+pheatmap::pheatmap(t(B[sample_order,]), scale = 'row', cluster_cols = F, 
+                   cellwidth = 20, fontsize_row = 9, color = colorPal, 
+                   gaps_col = c(2,4))
+
+```
+
+### Ratio of cells expressing the marker 
+```{r, fig.height=10}
+# import nfkb target genes; (for marker analysis )
+nfkb <- readLines(file.path(datadir, 'nfkb_targets_mouse.txt'))
+dt <- melt.data.table(markers, id.vars = c('rn', 'condition'), measure.vars = c('pct.1', 'pct.2'))
+dt$variable <- ifelse(dt$variable == 'pct.1', 'EGFP_POS', 'EGFP_NEG')
+dt$group <- paste(dt$condition, dt$variable)
+dtc <- dcast.data.table(dt, rn ~ group, value.var = 'value')
+dtc[is.na(dtc)] <- 0
+m <- as.matrix(data.frame(dtc[,-1], row.names = dtc[[1]], check.names = F))
+
+genes <- unique(top$rn)
+ann_row <- data.frame('condition' = markers[rn %in% genes, .SD[which.min(p_val)],by = rn][match(genes, rn)]$condition, 
+                      #'is_nfkb_target' = as.factor(genes %in% nfkb),
+                      row.names = genes)
+
+pheatmap::pheatmap(m[genes, sample_order], scale = 'row', 
+                   color = colorPal, cellwidth = 20, 
+                   main = 'Ratio of cells expressing top markers', 
+                   annotation_row = ann_row,
+                   gaps_col = c(2, 4),
+                   cluster_cols = F, 
+                   fontsize = 9, cutree_rows = 3)
+```
+
+# Revisiting Bulk RNAseq data
+
+We want to apply some things learned from the single-cell data to the bulk RNA-seq data we have analyzed before. 
+
+```{r}
+# get RUVSeq normalized counts from bulk rnaseq data 
+sample_sheet <- read.csv(file.path(datadir, 'rnaseq', 'sample_sheet.csv'))
+counts <- read.table(file.path(datadir, 'rnaseq', 'feature_counts', 'raw_counts', 'hisat2', 'counts.tsv'), header = T, check.names = F)
+colData <- data.frame(sample_sheet[,-1], row.names = sample_sheet$name)
+
+set <- newSeqExpressionSet(counts = as.matrix(counts),
+                           phenoData = colData)
+differences <- makeGroups(colData$sample_type)
+set_s <- RUVs(set, unique(rownames(set)),
+              k=10, differences) #all genes
+
+norm_counts <- log(normCounts(set_s)+1)
+
+```
+
+
+## NFKB target genes 
+
+Make a heatmap of NFKB target genes (exclusively expressed in Cdh1+ epithelial cells only )
+```{r}
+# subset norm_counts for nfkb genes 
+ids <- readRDS(file.path(datadir, 'ensmusg2name.RDS'))
+nfkb_ids <- ids[match(nfkb, name)]$id
+M_nfkb <- norm_counts[nfkb_ids,]
+# convert to gene names 
+rownames(M_nfkb) <- ids[match(rownames(M_nfkb), id)]$name
+
+M <- GetAssayData(seu_epi)
+nonepi_cells <- colnames(seu)[seu$celltype != 'Epithelial cells']
+M_nonepi <- GetAssayData(seu[,nonepi_cells])
+genes <- intersect(rownames(M), rownames(M_nfkb))
+
+# get genes expressed in at least 1% of epithelial cells
+genes <- names(which(apply(M[genes,], 1, function(x) (sum(x > 0) / length(x)) * 100) > 0.5))
+
+# remove genes expressed in more than 5% of the non epithelial cells 
+genes <- names(which(apply(M_nonepi[genes,], 1, function(x) (sum(x > 0) / length(x)) * 100) < 3))
+
+# keep activated / repressed samples only 
+genes <- names(which(rowSums(M_nfkb[genes,]) > 0))
+
+colData$nfkb <- gsub(".+_", "", colData$sample_type)
+colData$dss <- gsub("_.+", "", colData$sample_type)
+
+pheatmap::pheatmap(M_nfkb[genes, ], scale = 'row', 
+                   annotation_col = colData[,c('nfkb','dss'),drop=F],
+                   cluster_cols = F,
+                   cellwidth = 15, 
+                   color = rev(colorRampPalette(RColorBrewer::brewer.pal(11, "RdYlBu"))(10)), 
+                   gaps_col = c(8, 16),
+                   cutree_rows = 5, 
+                   show_colnames = F)
+
+```
+
+## GSEA of bulk rnaseq samples 
+
+We score bulk rnaseq samples using different gene signatures. 
+
+```{r}
+score_gene_sets <- function(exprs, genesets) {
+  rankData <- singscore::rankGenes(exprs)
+  s <- pbapply::pbsapply(genesets, function(x) {
+    x <- intersect(x, rownames(rankData))
+    singscore::simpleScore(rankData, upSet = x)[['TotalScore']]
+  })
+  rownames(s) <- colnames(exprs)
+  return(s)
+}
+
+find_differential_signatures <- function(scores, samplesA, samplesB) {
+  groupA <- intersect(colnames(scores), samplesA)
+  groupB <- intersect(colnames(scores), samplesB)
+
+  message("Comparing ",length(groupA), " samples (A) with ",length(groupB), " samples (B)")
+
+  stats <- do.call(rbind, lapply(rownames(scores), function(x) {
+    a <- scores[x, groupA]
+    b <- scores[x, groupB]
+    data.table('signature' = x, 'groupA' = mean(a),
+               'groupB' = mean(b),
+               'pval' = wilcox.test(a, b)[['p.value']])
+  }))
+  stats$padj <- p.adjust(stats$pval, method = 'BH')
+  stats <- stats[order(pval)]
+
+  return(stats)
+}
+
+gex <- data.frame(norm_counts, check.names = F)
+# convert to gene names 
+ids <- readRDS(file.path(datadir, 'ensmusg2name.RDS'))
+gex$name <- ids[match(rownames(gex), id)]$name
+gex <- gex[!is.na(gex$name),]
+gex <- gex[!duplicated(gex$name),]
+rownames(gex) <- gex$name
+gex$name <- NULL
+
+
+```
+
+## EGFP+ markers
+
+For each condition, we found the signature genes that distinguish egfp+ from egfp- cells.
+Now, we score the bulk samples by these signatures. 
+```{r, fig.width=8, fig.height=2.5}
+m <- markers[pct.1 > 0.15][p_val_adj < 0.1][order(p_val_adj), .SD[1:51], by = .(condition)][rn != 'Egfp']
+
+egfp_signatures <- sapply(simplify = F, unique(m$condition), function(x) m[condition == x]$rn)
+
+egfp_signature_scores <- score_gene_sets(gex, egfp_signatures)
+egfp_signature_scores <- egfp_signature_scores[,c('Untreated', 'DSS', 'Recovery')]
+
+pheatmap::pheatmap(t(egfp_signature_scores), cluster_cols = F, 
+                   scale = 'row',
+                   annotation_col = colData[,c('nfkb','dss'),drop=F],
+                   cellwidth = 15,  cellheight = 10,
+                   color = colorRampPalette(c("#6298c8", "white", "#ae3d7f"))(10),                    cluster_rows = F, 
+                   show_colnames = F, 
+                   gaps_col = c(8, 16), 
+                   main = 'EGFP+ condition signature scores in bulk rnaseq')
+
+```
+
+
+## Immune Cell type markers 
+```{r, fig.width=10, fig.height=3}
+xcell <- readRDS(file.path(datadir, 'xCell_signatures.mouse_genenames.RDS'))
+
+# immune cell groups from xcell 
+immune_cells <- c("B-cells", "CD4+ T-cells", 
+                  "CD8+ T-cells", "DC", "Eosinophils", "Macrophages", "Monocytes", 
+                  "Mast cells", "Neutrophils", "NK cells")
+xcell_scores <- score_gene_sets(gex, xcell[immune_cells])
+
+pheatmap::pheatmap(t(xcell_scores), scale = 'row',
+                   annotation_col = colData[,c('nfkb','dss'),drop=F],
+                   cellwidth = 15, cellheight = 10,
+                   show_colnames = F,
+                   cluster_cols = F,
+                   gaps_col = c(8, 16), 
+                   color = colorRampPalette(c("#6298c8", "white", "#ae3d7f"))(10),
+                   main = 'Immune Cell Type Signature Scores in Bulk RNAseq')
+
+```
+
+# SessionInfo
+```{r}
+print(sessionInfo())
+```
+
+```{js, echo=FALSE}
+document.addEventListener('DOMContentLoaded', function() {
+  var images = document.querySelectorAll('img');
+  images.forEach(function(img, index) {
+    var button = document.createElement('button');
+    button.textContent = 'Download as PDF';
+    button.style = 'display: block; margin-top: 10px;';
+
+    button.onclick = function() {
+      var jsPDF = document.createElement('script');
+      jsPDF.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.3.1/jspdf.umd.min.js';
+      jsPDF.onload = function() {
+        var { jsPDF } = window.jspdf;
+        const doc = new jsPDF({
+          orientation: 'portrait',
+          unit: 'pt',
+          format: 'a4'
+        });
+
+        var imgEl = new Image();
+        imgEl.onload = function() {
+          // Calculate scale ratio to fit the image within the page
+          var scaleWidth = 595 / this.width;
+          var scaleHeight = 842 / this.height;
+          var scale = Math.min(scaleWidth, scaleHeight);
+
+          // Calculate dimensions to maintain aspect ratio
+          var imgWidth = this.width * scale;
+          var imgHeight = this.height * scale;
+
+          // Position the image centered horizontally and vertically
+          var xPos = (595 - imgWidth) / 2;
+          var yPos = (842 - imgHeight) / 2;
+
+          doc.addImage(this, 'PNG', xPos, yPos, imgWidth, imgHeight);
+          doc.save('download-' + index + '.pdf');
+        };
+        imgEl.crossOrigin = "Anonymous";
+        imgEl.src = img.src;
+      };
+      document.body.appendChild(jsPDF);
+    };
+
+    img.parentNode.insertBefore(button, img.nextSibling);
+  });
+});
+```
+

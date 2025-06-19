@@ -1,3 +1,11 @@
+# get a basis matrix that is the mean value per factor of variable
+get_basis_matrix <- function(M, factors) {
+  B <- pbapply::pbapply(M, 2, function(x) {
+    tapply(X = x, factors, FUN = mean)
+  })
+  return(B)
+}
+
 compute_PCA <- function(exp, topN = 50) {
   top <- head(names(sort(apply(exp, 1, sd), decreasing = T)), 5000)
   M <- t(exp[top,])

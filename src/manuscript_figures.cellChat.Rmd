@@ -1,0 +1,330 @@
+---
+title: "Manuscript Figures - Cell-Cell Communication Analysis using CellChat"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    theme: readable
+params:
+  cellchat_file: ''
+  
+author: Bora Uyar
+---
+
+`r date()`
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F, fig.height = 8, fig.width = 10)
+library(CellChat)
+library(ggplot2)
+library(ggalluvial)
+```
+
+```{r}
+# cell chat results per condition
+cellchat <- readRDS(params$cellchat_file)
+
+```
+
+# Detected Cell-Cell Interactions 
+
+## Interaction strength {.tabset}
+
+### Untreated 
+```{r}
+groupSize <- as.numeric(table(cellchat$Untreated@idents))
+netVisual_circle(cellchat$Untreated@net$weight, vertex.weight = groupSize, 
+                 weight.scale = T, label.edge= F, title.name = "Interaction weights/strength", 
+                 vertex.label.cex = 1)
+pdf(file = 'untreated.pdf', width = 10, height = 10)
+netVisual_circle(cellchat$Untreated@net$weight, vertex.weight = groupSize, 
+                 weight.scale = T, label.edge= F, title.name = "Interaction weights/strength", 
+                 vertex.label.cex = 3.2, edge.width.max = 15)
+dev.off()
+```
+
+
+### DSS 
+```{r}
+groupSize <- as.numeric(table(cellchat$DSS@idents))
+netVisual_circle(cellchat$DSS@net$weight, vertex.weight = groupSize, 
+                 weight.scale = T, label.edge= F, title.name = "Interaction weights/strength")
+
+pdf(file = 'DSS.pdf', width = 10, height = 10)
+netVisual_circle(cellchat$DSS@net$weight, vertex.weight = groupSize, 
+                 weight.scale = T, label.edge= F, title.name = "Interaction weights/strength",
+                 vertex.label.cex = 3.2, edge.width.max = 15)
+dev.off()
+
+```
+
+### Recovery
+```{r}
+groupSize <- as.numeric(table(cellchat$Recovery@idents))
+pdf(file = 'recovery.pdf', width = 10, height = 10)
+netVisual_circle(cellchat$Recovery@net$weight, vertex.weight = groupSize, 
+                 weight.scale = T, label.edge= F, title.name = "Interaction weights/strength",
+                 vertex.label.cex = 3.2, edge.width.max = 15)
+dev.off()
+
+```
+
+
+## As a heatmap {.tabset}
+
+### Untreated
+
+```{r}
+netVisual_heatmap(cellchat$Untreated, color.heatmap = "Reds", measure = 'weight')
+```
+
+### DSS
+
+```{r}
+netVisual_heatmap(cellchat$DSS, color.heatmap = "Reds", measure = 'weight')
+```
+
+### Recovery
+
+```{r}
+netVisual_heatmap(cellchat$Recovery, color.heatmap = "Reds", measure = 'weight')
+```
+
+# Pathways  
+
+## L-R pair contributions {.tabset}
+
+### Untreated
+```{r, fig.height=10}
+obj <- cellchat$Untreated
+paths <- obj@netP$pathways
+netAnalysis_contribution(obj, signaling = paths)
+```
+
+### DSS
+```{r, fig.height=10}
+obj <- cellchat$DSS
+paths <- obj@netP$pathways
+netAnalysis_contribution(obj, signaling = paths)
+```
+
+### Recovery
+```{r, fig.height=10}
+obj <- cellchat$Recovery
+paths <- obj@netP$pathways
+netAnalysis_contribution(obj, signaling = paths)
+```
+
+
+## Chord diagram {.tabset}
+
+### Untreated 
+
+```{r, fig.height=10}
+obj <- cellchat$Untreated
+netVisual_chord_gene(obj, slot.name = "netP", legend.pos.x = 10, lab.cex = 0.4)
+```
+
+### DSS
+
+```{r, fig.height=10}
+obj <- cellchat$DSS
+netVisual_chord_gene(obj, slot.name = "netP", legend.pos.x = 10, lab.cex = 0.4)
+```
+
+### Recovery
+
+```{r, fig.height=10}
+obj <- cellchat$Recovery
+netVisual_chord_gene(obj, slot.name = "netP", legend.pos.x = 10, lab.cex = 0.4)
+```
+
+
+```{r, echo=F}
+# print to pdf 
+pdf(file = 'chord_diagram.pdf', width = 20, height = 20)
+netVisual_chord_gene(cellchat$Untreated, slot.name = "netP", legend.pos.x = 10, lab.cex = 1.5)
+netVisual_chord_gene(cellchat$DSS, slot.name = "netP", legend.pos.x = 10, lab.cex = 1.2)
+netVisual_chord_gene(cellchat$Recovery, slot.name = "netP", legend.pos.x = 10, lab.cex = 1)
+dev.off()
+
+# I use "epithelial cells" as the source and draw connections to all possible cell types 
+# I put a thresolhd (reduce) to remove rare ones to avoid label overlaps 
+pdf(file = 'chord_diagram_epithelial_as_source.pdf', width = 12, height = 10)
+netVisual_chord_gene(cellchat$Untreated, sources.use = 3, slot.name = "netP", legend.pos.x = 10, lab.cex = 1.6)
+netVisual_chord_gene(cellchat$DSS, sources.use = 3, slot.name = "netP", legend.pos.x = 10, lab.cex = 1.6, 
+                     reduce = 0.005)
+netVisual_chord_gene(cellchat$Recovery, sources.use = 3, slot.name = "netP", legend.pos.x = 10, lab.cex = 1.6,
+                     reduce = 0.005)
+dev.off()
+```
+
+# Network Analysis
+
+```{r}
+cellchat <- sapply(simplify = F, cellchat, function(obj) {
+  netAnalysis_computeCentrality(obj, slot.name = "netP")
+})
+```
+
+## Outgoing signaling patterns {.tabset}
+
+### Untreated
+```{r, fig.height=10}
+obj <- cellchat$Untreated
+netAnalysis_signalingRole_heatmap(obj, pattern = "outgoing", color.heatmap = 'Reds', 
+                                  height = 15, width = 20)
+```
+
+### DSS
+```{r, fig.height=10}
+obj <- cellchat$DSS
+netAnalysis_signalingRole_heatmap(obj, pattern = "outgoing", color.heatmap = 'Reds', 
+                                  height = 15, width = 20)
+```
+
+### Recovery
+```{r, fig.height=10}
+obj <- cellchat$Recovery
+netAnalysis_signalingRole_heatmap(obj, pattern = "outgoing", color.heatmap = 'Reds',
+                                   height = 15, width = 20)
+```
+
+
+## Incoming signaling patterns {.tabset}
+
+### Untreated
+```{r}
+obj <- cellchat$Untreated
+netAnalysis_signalingRole_heatmap(obj, pattern = "incoming", color.heatmap = 'Reds',
+                                   height = 15, width = 20)
+```
+
+### DSS
+```{r}
+obj <- cellchat$DSS
+netAnalysis_signalingRole_heatmap(obj, pattern = "incoming", color.heatmap = 'Reds',
+                                   height = 15, width = 20)
+```
+
+### Recovery
+```{r}
+obj <- cellchat$Recovery
+netAnalysis_signalingRole_heatmap(obj, pattern = "incoming", color.heatmap = 'Reds',
+                                   height = 15, width = 20)
+```
+
+## Incoming interaction patterns 
+```{r}
+nPatterns = 4
+cellchat <- sapply(simplify = F, cellchat, function(obj) {
+  identifyCommunicationPatterns(obj, pattern = "incoming", k = nPatterns, heatmap.show = F)
+})
+```
+
+### River Plot {.tabset}
+
+#### Untreated
+
+```{r}
+obj <- cellchat$Untreated
+netAnalysis_river(obj, pattern = "incoming")
+```
+
+#### DSS 
+
+```{r}
+obj <- cellchat$DSS
+netAnalysis_river(obj, pattern = "incoming")
+```
+
+#### Recovery
+
+```{r}
+obj <- cellchat$Recovery
+netAnalysis_river(obj, pattern = "incoming")
+```
+
+## Outgoing interaction patterns
+
+```{r}
+nPatterns = 4
+cellchat <- sapply(simplify = F, cellchat, function(obj) {
+  identifyCommunicationPatterns(obj, pattern = "outgoing", k = nPatterns, heatmap.show = F)
+})
+```
+
+### River Plot {.tabset}
+
+#### Untreated
+
+```{r}
+obj <- cellchat$Untreated
+netAnalysis_river(obj, pattern = "outgoing")
+```
+
+#### DSS 
+
+```{r}
+obj <- cellchat$DSS
+netAnalysis_river(obj, pattern = "outgoing")
+```
+
+#### Recovery
+
+```{r}
+obj <- cellchat$Recovery
+netAnalysis_river(obj, pattern = "outgoing")
+```
+
+
+```{js, echo=FALSE}
+document.addEventListener('DOMContentLoaded', function() {
+  var images = document.querySelectorAll('img');
+  images.forEach(function(img, index) {
+    var button = document.createElement('button');
+    button.textContent = 'Download as PDF';
+    button.style = 'display: block; margin-top: 10px;';
+
+    button.onclick = function() {
+      var jsPDF = document.createElement('script');
+      jsPDF.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.3.1/jspdf.umd.min.js';
+      jsPDF.onload = function() {
+        var { jsPDF } = window.jspdf;
+        const doc = new jsPDF({
+          orientation: 'portrait',
+          unit: 'pt',
+          format: 'a4'
+        });
+
+        var imgEl = new Image();
+        imgEl.onload = function() {
+          // Calculate scale ratio to fit the image within the page
+          var scaleWidth = 595 / this.width;
+          var scaleHeight = 842 / this.height;
+          var scale = Math.min(scaleWidth, scaleHeight);
+
+          // Calculate dimensions to maintain aspect ratio
+          var imgWidth = this.width * scale;
+          var imgHeight = this.height * scale;
+
+          // Position the image centered horizontally and vertically
+          var xPos = (595 - imgWidth) / 2;
+          var yPos = (842 - imgHeight) / 2;
+
+          doc.addImage(this, 'PNG', xPos, yPos, imgWidth, imgHeight);
+          doc.save('download-' + index + '.pdf');
+        };
+        imgEl.crossOrigin = "Anonymous";
+        imgEl.src = img.src;
+      };
+      document.body.appendChild(jsPDF);
+    };
+
+    img.parentNode.insertBefore(button, img.nextSibling);
+  });
+});
+```
