@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://doi.org/10.5281/zenodo.18230657">
+    <img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.18230657-blue" alt="DOI">
+  </a>
+</p>
+
 # Description
 
 This repo contains data and code used to analyse RNA-seq and single-cell RNA-seq datasets 
