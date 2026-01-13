@@ -1,0 +1,238 @@
+---
+title: "Analysis of T-regs - Single-cell Data - 3rd Batch"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    theme: united
+params:
+  seu_file: ''
+
+author: Bora Uyar
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, fig.width = 10,
+                      fig.height = 8)
+library(data.table)
+library(Seurat)
+library(openxlsx)
+library(ggplot2)
+
+ggplot2::theme_set(ggpubr::theme_pubclean())
+
+seu <- readRDS(params$seu_file)
+```
+
+
+# All Cells {.tabset}
+
+## by Sample
+
+```{r}
+DimPlot(seu, group.by = 'sample')
+```
+
+## by Cell Type 
+
+```{r}
+DimPlot(seu, group.by = 'celltype', label = T, label.size = 6)
+```
+
+## by Cell Type vs Sample
+```{r}
+DimPlot(seu, group.by = 'celltype', split.by = 'sample', label = T, label.size = 4, ncol = 2)
+```
+
+# Regulatory T-Cells 
+
+```{r}
+seu_tregs <- seu[,which(seu$celltype == 'Tregs')]
+```
+
+## Foxp3 
+
+Tregs were selected based on Foxp3 expression in the clusters that overlap T-cells. 
+
+```{r}
+FeaturePlot(seu, "Foxp3")
+```
+
+## Marker analysis 
+
+We carry out differential marker analysis between: 
+
+1. KO_COLON vs WT_COLON
+2. KO_SPLEEN vs WT_SPLEEN
+
+```{r}
+# marker discovery within Treg subpopulation
+colon <- data.table(FindMarkers(seu_tregs, 
+                             min.pct = 0.1, 
+                             logFoldChange = 0.25,
+                             test.use = 'wilcox', 
+                             ident.1 = 'KO_COLON',
+                             ident.2 = 'WT_COLON',
+                             group.by = 'sample'), 
+                 keep.rownames = T)[order(p_val)]
+
+spleen <- data.table(FindMarkers(seu_tregs, 
+                                   min.pct = 0.1, 
+                                   logFoldChange = 0.25,
+                                   test.use = 'wilcox', 
+                                   ident.1 = 'KO_SPLEEN',
+                                   ident.2 = 'WT_SPLEEN',
+                                   group.by = 'sample'), 
+                       keep.rownames = T)[order(p_val)]
+```
+
+### Colon markers (KO vs WT) in Tregs {.tabset}
+
+We find markers in colon samples (KO vs WT) and look at their patterns across samples in T-reg cells. 
+
+#### Top Markers (padj < 0.1)
+
+```{r}
+colon_genes <- colon[p_val_adj < 0.1]$rn
+knitr::kable(colon[p_val_adj < 0.1], caption = 'Colon Marker Genes KO vs WT')
+```
+
+#### DotPlot
+```{r}
+DotPlot(seu_tregs, colon_genes, group.by = 'sample') + coord_flip()
+```
+
+#### Heatmap 
+
+```{r}
+DoHeatmap(seu_tregs, colon_genes, group.by = 'sample')
+```
+
+#### VlnPlot
+
+```{r}
+VlnPlot(seu_tregs, colon_genes, group.by = 'sample', ncol = 4)
+```
+
+
+### Spleen markers (KO vs WT) in Tregs {.tabset}
+
+We find markers in colon samples (KO vs WT) and look at their patterns across samples in T-reg cells. 
+
+#### Top Markers (padj < 0.1)
+
+```{r}
+spleen_genes <- spleen[p_val_adj < 0.1]$rn
+knitr::kable(spleen[p_val_adj < 0.1],  caption = 'Spleen Marker Genes KO vs WT')
+```
+
+#### DotPlot
+```{r}
+DotPlot(seu_tregs, spleen_genes, group.by = 'sample') + coord_flip()
+```
+
+#### Heatmap 
+
+```{r}
+DoHeatmap(seu_tregs, spleen_genes, group.by = 'sample')
+```
+
+#### VlnPlot (only showing top 10)
+
+```{r}
+VlnPlot(seu_tregs, spleen_genes[1:10], group.by = 'sample', ncol = 5)
+```
+
+
+### Common Markers in Both Spleen & Colon T-regs
+
+We find Ftl1 and Gdpd3 as common markers with a clear upregulation in T-reg cells of KO samples in both colon and spleen tissues compared to WT.  
+
+```{r}
+common <- intersect(colon_genes, spleen_genes)
+```
+
+#### Feature Plot
+```{r}
+FeaturePlot(seu_tregs, common, split.by = 'sample')
+```
+
+#### VlnPlot
+```{r}
+VlnPlot(seu_tregs, common, group.by = 'sample')
+```
+
+
+
+```{r save_tables}
+# save marker results as xlsx tables 
+# save DE tables to excel file
+OUT <- createWorkbook() # for complete tables
+sname <- "Colon_Markers_KOvsWT"
+addWorksheet(OUT, sname)
+writeData(OUT, sheet = sname, x = colon)
+sname <- "Spleen_Markers_KOvsWT"
+addWorksheet(OUT, sname)
+writeData(OUT, sheet = sname, x = spleen)
+saveWorkbook(OUT, file.path("Tregs_Markers.xlsx"), overwrite = T)
+```
+
+
+# Session Info
+
+```{r}
+print(sessionInfo())
+```
+
+
+```{js, echo=FALSE}
+document.addEventListener('DOMContentLoaded', function() {
+  var images = document.querySelectorAll('img');
+  images.forEach(function(img, index) {
+    var button = document.createElement('button');
+    button.textContent = 'Download as PDF';
+    button.style = 'display: block; margin-top: 10px;';
+
+    button.onclick = function() {
+      var jsPDF = document.createElement('script');
+      jsPDF.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.3.1/jspdf.umd.min.js';
+      jsPDF.onload = function() {
+        var { jsPDF } = window.jspdf;
+        const doc = new jsPDF({
+          orientation: 'portrait',
+          unit: 'pt',
+          format: 'a4'
+        });
+
+        var imgEl = new Image();
+        imgEl.onload = function() {
+          // Calculate scale ratio to fit the image within the page
+          var scaleWidth = 595 / this.width;
+          var scaleHeight = 842 / this.height;
+          var scale = Math.min(scaleWidth, scaleHeight);
+
+          // Calculate dimensions to maintain aspect ratio
+          var imgWidth = this.width * scale;
+          var imgHeight = this.height * scale;
+
+          // Position the image centered horizontally and vertically
+          var xPos = (595 - imgWidth) / 2;
+          var yPos = (842 - imgHeight) / 2;
+
+          doc.addImage(this, 'PNG', xPos, yPos, imgWidth, imgHeight);
+          doc.save('download-' + index + '.pdf');
+        };
+        imgEl.crossOrigin = "Anonymous";
+        imgEl.src = img.src;
+      };
+      document.body.appendChild(jsPDF);
+    };
+
+    img.parentNode.insertBefore(button, img.nextSibling);
+  });
+});
+```
+

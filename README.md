@@ -37,13 +37,20 @@ Each condition consisted of 4 replicates, thus a total of 24 samples were obtain
   - **PiGx RNA-Seq Settings File**: The settings file required to run pigx-rnaseq pipeline. See `./data/rnaseq/settings.yaml` 
   - **Processed count tables**: Raw/normalized feature count tables can be found under `./data/rnaseq/feature_counts`
   
-## single-cell RNA-seq
+## scRNA-seq - EGFP-Knock-in Experiment
 
   - **Raw Reads and CellRanger Output**: Raw fastq reads along with CellRanger outputs can be downloaded from [here](https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_reads.tgz)
   - **Processed Seurat Object**:
       - **RDS format**: https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/seu.RDS
       - **cloupe format**: https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/seu.cloupe
   - **Processed CellChat Object**: https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/cellChat_by_condition.RDS
+
+## scRNA-seq - Treg Experiment
+
+  - **Raw Reads and CellRanger Output**: Raw fastq reads along with CellRanger outputs can be downloaded from [here](https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_reads.tgz)
+  - **Processed Seurat Object**:
+      - **RDS format**: https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_tregs/seu.RDS
+      - **cloupe format**: https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_tregs/seu.cloupe
 
 # Analysis 
 
@@ -78,7 +85,7 @@ Rscript -e "library(rmarkdown); rmarkdown::render('./src/analysis.Rmd', \
 - HTML report:  `./results/rnaseq/analysis.html`. 
 - The DEseq2 results: `./results/rnaseq/DE_results.xlsx`. 
 
-## scRNA-seq
+## scRNA-seq - EGFP-Knock-in Experiment
 
 This experiment has an EGFP-knockin expectedly in 1-3% of the cells. The initial CellRanger output for count tables had discarded a significant portion of potential EGFP containing cells. 
 So, we re-aligned the reads against EGFP construct sequence. Then, we extract the cellular barcodes of the reads that contain EGFP hits. 
@@ -175,8 +182,34 @@ Rscript -e "library(rmarkdown); rmarkdown::render('../src/manuscript_figures.cel
 - CellChat analysis report: `./results/manuscript_figures.cellChat.html`. 
 
 
+## scRNAseq - Treg Analysis 
 
 
+1. Download and export the contents of the single-cell read files for the experiment 
+
+```
+cd ./data/; mkdir scrnaseq_tregs; cd scrnaseq_tregs 
+wget https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_tregs/250919_LH00253_0343_B233HHNLT3_A5391_CR.zip
+unzip 250919_LH00253_0343_B233HHNLT3_A5391_CR.zip
+```
+
+2. Process the reads using Seurat and save data as a Seurat object in RDS and Cloupe formats
+
+```
+Rscript ../../src/process_treg_reads.R 250919_LH00253_0343_B233HHNLT3_A5391_CR
+```
+
+3. Results: analysis and visualisation of Treg processed experiment data
+
+```
+seu_file=`readlink -f seu.RDS`
+outdir=$(pwd)
+Rscript -e "library(rmarkdown); rmarkdown::render('../../src/tregs_analysis.Rmd', \
+  params = list(seu_file = '${seu_file}'), \
+  output_dir = '${outdir}')"
+```
+
+The output of this can be found under `./results/tregs_analysis.html`
 
 
 
