@@ -53,7 +53,7 @@ Each condition consisted of 4 replicates, thus a total of 24 samples were obtain
 
 ## scRNA-seq - Treg Experiment
 
-  - **Raw Reads and CellRanger Output**: Raw fastq reads along with CellRanger outputs can be downloaded from [here](https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_reads.tgz)
+  - **CellRanger Output**: CellRanger outputs can be downloaded from [here](https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_reads.tgz)
   - **Processed Seurat Object**:
       - **RDS format**: https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_tregs/seu.RDS
       - **cloupe format**: https://bimsbstatic.mdc-berlin.de/akalin/buyar/marina/manuscript_data_colitis/scrnaseq_tregs/seu.cloupe
